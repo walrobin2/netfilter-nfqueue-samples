@@ -3,18 +3,35 @@
 #include <unistd.h>
 #include <netinet/in.h>
 #include <linux/types.h>
-#include <linux/netfilter.h>		
+#include <linux/netfilter.h>
 #include <libnetfilter_queue/libnetfilter_queue.h>
 
+#define ROW_LEN 32
+static int processPacketData(unsigned char *data, int len) {
+    int row, col;
+    int rows=len/ROW_LEN;
+    printf("Data ---------\n");
+    for (row=0;row<len/ROW_LEN;row++) {
+        for (col=0;col<ROW_LEN;col++) {
+            printf("%02X ", data[col+(row*ROW_LEN)]);
+        }
+        printf("\n");
+    }
+    int last=len%ROW_LEN;
+    printf("Last: %d\n", last);
+    for (col=0;col<last;col++) {
+        printf("%02X ", data[col+(rows*ROW_LEN)]);
+    }
+}
 
 static u_int32_t print_pkt (struct nfq_data *tb)
 {
 	int id = 0;
 	struct nfqnl_msg_packet_hdr *ph;
 	struct nfqnl_msg_packet_hw *hwph;
-	u_int32_t mark,ifi; 
+	u_int32_t mark,ifi;
 	int ret;
-	char *data;
+	unsigned char *data;
 
 	ph = nfq_get_msg_packet_hdr(tb);
 	if (ph) {
@@ -55,23 +72,30 @@ static u_int32_t print_pkt (struct nfq_data *tb)
 	ret = nfq_get_payload(tb, &data);
 	if (ret >= 0) {
 		printf("payload_len=%d ", ret);
-		//processPacketData (data, ret);
+#ifdef DUMP_PACKET
+		processPacketData (data, ret);
+#endif
 	}
 	fputc('\n', stdout);
 
 	return id;
 }
-	
+
 
 static int cb(struct nfq_q_handle *qh, struct nfgenmsg *nfmsg, struct nfq_data *nfa, void *data)
 {
-//	u_int32_t id = print_pkt(nfa);
+#ifdef PRINT_DETAILS
+	u_int32_t id = print_pkt(nfa);
+#else
 	u_int32_t id;
+#endif
 
         struct nfqnl_msg_packet_hdr *ph;
-	ph = nfq_get_msg_packet_hdr(nfa);	
+	ph = nfq_get_msg_packet_hdr(nfa);
 	id = ntohl(ph->packet_id);
+#ifdef PRINT_DETAILS
 	printf("entering callback\n");
+#endif
 	return nfq_set_verdict(qh, id, NF_ACCEPT, 0, NULL);
 }
 
@@ -121,7 +145,9 @@ int main(int argc, char **argv)
 
 	while ((rv = recv(fd, buf, sizeof(buf), 0)))
 	{
+#ifdef PRINT_DETAILS
 		printf("pkt received\n");
+#endif
 		nfq_handle_packet(h, buf, rv);
 	}
 
